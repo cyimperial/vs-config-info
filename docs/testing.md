@@ -14,9 +14,26 @@ self-contained script so that a fresh clone on a stock Windows box can verify it
 | Group | Tests | Examples |
 | --- | --- | --- |
 | Static checks | 8 | Every script parses; front matter is well formed; the `description` fits the discovery budget; no hardcoded user profile paths; every PowerShell block inside `SKILL.md` parses; relative markdown links resolve; no helper is defined twice |
-| Helper unit tests | 11 | `Get-JsonProperty` returns a default instead of throwing; `ConvertTo-SortableVersion` orders `9.0.17` before `10.0.9`; `Format-JsonIndent` normalises indentation without touching string values |
+| Helper unit tests | 18 | `Get-JsonProperty` returns a default instead of throwing; `ConvertTo-SortableVersion` orders `9.0.17` before `10.0.9`; `Format-JsonIndent` normalises indentation without touching string values; the drawing plan picks the right assembly per host |
 | Collector | 3 | `Get-VsConfigInfo` returns the documented shape, emits valid JSON, and never reports the `Host:` version as an SDK version |
 | Renderers | 8 | Each image script writes a plausible PNG; long labels are not clipped; a missing root yields a placeholder rather than an exception; the razor dry run creates nothing |
+
+## Testing branches that cannot run here
+
+Two code paths matter but are unreachable on a Windows PowerShell 5.1 box: the PowerShell 7
+GDI+ path and the non-Windows refusal. Rather than leave them untested, the *decision* is split
+from the *effect* — `Get-VsConfigDrawingPlan` is pure and takes `-Edition` / `-OnWindows`, so
+every branch is reachable from 5.1:
+
+```powershell
+Get-VsConfigDrawingPlan -Edition Core -OnWindows $true    # -> System.Drawing.Common
+Get-VsConfigDrawingPlan -Edition Core -OnWindows $false   # -> Supported = False
+```
+
+The failure *message* is covered too: `Initialize-VsConfigDrawing -Plan <bogus> -Force` forces a
+real load failure and the test asserts the text names both remedies. This is a deliberate
+pattern — where an environment cannot be reproduced, make the logic injectable instead of
+declaring it untestable.
 
 Every blocker and every bug found during the rewrite has a named regression test, tagged with
 its ID from [`fixes-2026-08-14.md`](fixes-2026-08-14.md) — for example
@@ -36,7 +53,7 @@ host runtime installed. Those tests call `Assert-Skip` and report `SKIP` rather 
 A skip is not a pass. The summary line reports skips separately so they stay visible:
 
 ```
-  Passed: 29   Failed: 0   Skipped: 1
+  Passed: 36   Failed: 0   Skipped: 1
 ```
 
 Tests are written to skip only when the *environment* cannot support them, never to paper over

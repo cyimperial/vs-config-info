@@ -23,8 +23,9 @@ Formats that build projects are opt-in and dry-run by default.
 ## 📦 Requirements
 
 - Windows (the skill uses `cmd`, `vswhere` and `System.Drawing`)
-- Windows PowerShell 5.1 — PowerShell 7 is **not yet verified**, because `System.Drawing` needs
-  the `System.Drawing.Common` package on .NET Core
+- Windows PowerShell 5.1 — this is the verified host. On PowerShell 7 the scripts detect that
+  GDI+ moved to the `System.Drawing.Common` package and tell you exactly how to proceed rather
+  than failing with a cryptic `Add-Type` error
 - [GitHub Copilot CLI](https://github.com/github/copilot-cli)
 - .NET SDK on `PATH` — the skill reports its absence rather than inventing a version, but most
   formats need it
@@ -97,7 +98,7 @@ vs-config-info/
 │   ├── New-JsonSnippetImage.ps1    # VS Code dark-theme JSON
 │   └── New-RazorMatrix.ps1         # guarded multi-TFM razor build
 └── tests/
-    └── Invoke-SkillTests.ps1       # 30 tests, no external dependencies
+    └── Invoke-SkillTests.ps1       # 37 tests, no external dependencies
 ```
 
 All rendering lives in `scripts/` so it can be parsed, executed and verified — see
@@ -132,7 +133,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-RazorMatrix.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps1
 ```
 
-30 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
+37 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
 fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md).
 
 ## 📜 License

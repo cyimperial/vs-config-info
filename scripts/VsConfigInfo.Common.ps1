@@ -3,7 +3,104 @@
 # Dot-source this file:  . "$PSScriptRoot\VsConfigInfo.Common.ps1"
 
 Set-StrictMode -Version Latest
-Add-Type -AssemblyName System.Drawing
+
+function Get-VsConfigDrawingPlan {
+    <#
+    .SYNOPSIS
+        Decides which drawing assembly this host needs. Pure - performs no loading.
+    .DESCRIPTION
+        Split from Initialize-VsConfigDrawing so the PowerShell 7 and non-Windows branches
+        can be unit tested from Windows PowerShell 5.1, where they would otherwise never run.
+
+        Windows PowerShell 5.1 (Desktop) loads System.Drawing from the GAC. PowerShell 7 (Core)
+        does not ship it: GDI+ moved to the System.Drawing.Common package.
+    #>
+    [CmdletBinding()]
+    param(
+        [ValidateSet('Desktop', 'Core')]
+        [string]$Edition,
+
+        [nullable[bool]]$OnWindows
+    )
+
+    if (-not $PSBoundParameters.ContainsKey('Edition')) {
+        # $PSVersionTable is a Hashtable, so a missing key yields $null rather than throwing.
+        $Edition = if ($PSVersionTable.PSEdition) { [string]$PSVersionTable.PSEdition } else { 'Desktop' }
+    }
+    if ($null -eq $OnWindows) {
+        # Works on 5.1 and 7 alike; $IsWindows does not exist on 5.1.
+        $OnWindows = ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
+    }
+
+    if (-not $OnWindows) {
+        return [pscustomobject]@{
+            Supported    = $false
+            AssemblyName = $null
+            NeedsPackage = $false
+            Reason       = 'The vs-config-info skill is Windows-only: it renders with GDI+ and reads ' +
+                           'Visual Studio state through vswhere and the Windows registry.'
+        }
+    }
+
+    if ($Edition -eq 'Desktop') {
+        return [pscustomobject]@{
+            Supported    = $true
+            AssemblyName = 'System.Drawing'
+            NeedsPackage = $false
+            Reason       = $null
+        }
+    }
+
+    return [pscustomobject]@{
+        Supported    = $true
+        AssemblyName = 'System.Drawing.Common'
+        NeedsPackage = $true
+        Reason       = $null
+    }
+}
+
+function Initialize-VsConfigDrawing {
+    <#
+    .SYNOPSIS
+        Loads GDI+, failing fast with an actionable message instead of a cryptic Add-Type error.
+    .PARAMETER Plan
+        Overrides the detected plan. Exists so the failure path can be tested on a host where
+        the assembly would otherwise load successfully.
+    .PARAMETER Force
+        Re-run even when a drawing type is already loaded.
+    #>
+    [CmdletBinding()]
+    param(
+        [psobject]$Plan,
+        [switch]$Force
+    )
+
+    if (-not $Force -and ('System.Drawing.Bitmap' -as [type])) { return }
+
+    if (-not $Plan) { $Plan = Get-VsConfigDrawingPlan }
+    if (-not $Plan.Supported) { throw $Plan.Reason }
+
+    try {
+        Add-Type -AssemblyName $Plan.AssemblyName -ErrorAction Stop
+    }
+    catch {
+        if (-not $Plan.NeedsPackage) { throw }
+        throw ("PowerShell $($PSVersionTable.PSVersion) cannot load GDI+: the assembly " +
+               "'$($Plan.AssemblyName)' is not available, and PowerShell 7 does not ship it." +
+               [Environment]::NewLine +
+               'Either run this skill under Windows PowerShell 5.1:' + [Environment]::NewLine +
+               '    powershell -NoProfile -ExecutionPolicy Bypass -File <script>.ps1' + [Environment]::NewLine +
+               'or install the package first:' + [Environment]::NewLine +
+               '    Install-Package System.Drawing.Common -Scope CurrentUser' + [Environment]::NewLine +
+               "Underlying error: $($_.Exception.Message)")
+    }
+
+    if (-not ('System.Drawing.Bitmap' -as [type])) {
+        throw "Loaded '$($Plan.AssemblyName)' but System.Drawing.Bitmap is still unavailable."
+    }
+}
+
+Initialize-VsConfigDrawing
 
 function Get-VsConfigOutputRoot {
     <#

@@ -80,10 +80,15 @@ function Assert-Equal {
 }
 
 function Assert-Throws {
-    param([scriptblock]$Body, [string]$Message = 'Expected an exception')
-    $threw = $false
-    try { & $Body } catch { $threw = $true }
-    if (-not $threw) { throw $Message }
+    param([scriptblock]$Body, [string]$Message = 'Expected an exception', [string[]]$MessageLike)
+    $err = $null
+    try { & $Body | Out-Null } catch { $err = $_ }
+    if (-not $err) { throw $Message }
+    foreach ($pattern in $MessageLike) {
+        if ($err.Exception.Message -notlike $pattern) {
+            throw "$Message - thrown message did not match '$pattern': $($err.Exception.Message)"
+        }
+    }
 }
 
 function Get-ImageSize {
@@ -255,6 +260,69 @@ Test-Case 'Get-VsConfigOutputRoot honours an explicit root' {
     $result = Get-VsConfigOutputRoot -OutputRoot $explicit
     Assert-True (Test-Path $explicit) 'explicit root was not created'
     Assert-Equal (Get-Item -LiteralPath $explicit).FullName (Get-Item -LiteralPath $result).FullName 'returned a different folder'
+}
+
+# --- P4: host compatibility --------------------------------------------------
+# Get-VsConfigDrawingPlan is pure, so the PowerShell 7 and non-Windows branches are
+# reachable from Windows PowerShell 5.1 - where they would otherwise never execute.
+
+Test-Case 'Drawing plan uses the GAC assembly on Windows PowerShell 5.1 (P4)' {
+    $plan = Get-VsConfigDrawingPlan -Edition Desktop -OnWindows $true
+    Assert-True $plan.Supported 'Desktop on Windows should be supported'
+    Assert-Equal 'System.Drawing' $plan.AssemblyName
+    Assert-True (-not $plan.NeedsPackage) 'Desktop must not require a package'
+}
+
+Test-Case 'Drawing plan switches to System.Drawing.Common on PowerShell 7 (P4)' {
+    $plan = Get-VsConfigDrawingPlan -Edition Core -OnWindows $true
+    Assert-True $plan.Supported 'Core on Windows should be supported'
+    Assert-Equal 'System.Drawing.Common' $plan.AssemblyName
+    Assert-True $plan.NeedsPackage 'Core needs the System.Drawing.Common package'
+}
+
+Test-Case 'Drawing plan refuses non-Windows hosts with a reason (P4)' {
+    foreach ($edition in 'Desktop', 'Core') {
+        $plan = Get-VsConfigDrawingPlan -Edition $edition -OnWindows $false
+        Assert-True (-not $plan.Supported) "$edition off Windows should be unsupported"
+        Assert-Equal $null $plan.AssemblyName "$edition off Windows should name no assembly"
+        Assert-True ($plan.Reason -like '*Windows-only*') "$edition is missing an explanation"
+    }
+}
+
+Test-Case 'Drawing plan auto-detects the running host (P4)' {
+    $plan = Get-VsConfigDrawingPlan
+    Assert-True $plan.Supported 'the host running this suite must be supported'
+    Assert-True ([bool]$plan.AssemblyName) 'no assembly chosen for the running host'
+}
+
+Test-Case 'Initialize-VsConfigDrawing reports both remedies when GDI+ is missing (P4)' {
+    # Simulates PowerShell 7 without System.Drawing.Common: the user must get a message they
+    # can act on, not a bare "Cannot find assembly" from Add-Type.
+    $bogus = [pscustomobject]@{
+        Supported    = $true
+        AssemblyName = 'VsConfigInfo.NoSuchAssembly'
+        NeedsPackage = $true
+        Reason       = $null
+    }
+    Assert-Throws { Initialize-VsConfigDrawing -Plan $bogus -Force } 'expected a load failure' `
+        -MessageLike '*Windows PowerShell 5.1*', '*Install-Package System.Drawing.Common*', '*Underlying error:*'
+}
+
+Test-Case 'Initialize-VsConfigDrawing refuses an unsupported host (P4)' {
+    $unsupported = [pscustomobject]@{
+        Supported    = $false
+        AssemblyName = $null
+        NeedsPackage = $false
+        Reason       = 'The vs-config-info skill is Windows-only: test sentinel.'
+    }
+    Assert-Throws { Initialize-VsConfigDrawing -Plan $unsupported -Force } 'expected a refusal' `
+        -MessageLike '*Windows-only*'
+}
+
+Test-Case 'GDI+ is loaded once Common is dot-sourced (P4)' {
+    Assert-True ([bool]('System.Drawing.Bitmap' -as [type])) 'System.Drawing.Bitmap is not available'
+    Initialize-VsConfigDrawing   # must be idempotent
+    Assert-True ([bool]('System.Drawing.Bitmap' -as [type])) 're-initialising broke the loaded type'
 }
 
 # =============================================================================

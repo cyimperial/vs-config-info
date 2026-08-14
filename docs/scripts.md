@@ -1,6 +1,7 @@
 # Script reference
 
 All scripts live in `scripts/` and target **Windows PowerShell 5.1** with `System.Drawing`.
+See [Host compatibility](#host-compatibility) for PowerShell 7 behaviour.
 
 Invoke them with an execution-policy bypass:
 
@@ -21,6 +22,8 @@ Dot-sourced helper library. Not run directly.
 
 | Function | Purpose |
 | --- | --- |
+| `Get-VsConfigDrawingPlan` | Pure: decides which drawing assembly the current host needs |
+| `Initialize-VsConfigDrawing` | Loads GDI+ using that plan, with an actionable error if it cannot |
 | `Get-VsConfigOutputRoot` | Resolves the artifact folder: `-OutputRoot` → `$env:COPILOT_SESSION_FILES` → newest `~/.copilot/session-state/*/files` → `$env:TEMP\vs-config-info` |
 | `New-VsConfigTimestampFolder` | Creates an `MMDD-HHMM` folder under the resolved root |
 | `Get-DotnetRootPath` | `$env:DOTNET_ROOT` → resolved `dotnet` on PATH → `%ProgramFiles%\dotnet` |
@@ -37,6 +40,26 @@ Dot-sourced helper library. Not run directly.
 > that a JSON object does not carry throws `PropertyNotFoundStrict`. `vswhere` output varies by
 > install — a minimal instance has no `catalog` node at all — so every optional property is read
 > through this helper rather than with `$json.catalog.productDisplayVersion`.
+
+### Host compatibility
+
+Dot-sourcing `VsConfigInfo.Common.ps1` calls `Initialize-VsConfigDrawing`, so every script gets
+GDI+ or a usable explanation:
+
+| Host | Assembly | Result |
+| --- | --- | --- |
+| Windows PowerShell 5.1 | `System.Drawing` (GAC) | Loads. This is the verified host. |
+| PowerShell 7 on Windows | `System.Drawing.Common` | Loads **if the package is installed**; otherwise throws a message naming both remedies. |
+| Any non-Windows host | — | Refused up front: the skill also needs `cmd`, `vswhere` and the registry. |
+
+The decision lives in `Get-VsConfigDrawingPlan`, which performs no loading. Keeping it pure is
+what lets the test suite exercise the PowerShell 7 and non-Windows branches from 5.1, where
+they would otherwise never execute:
+
+```powershell
+Get-VsConfigDrawingPlan -Edition Core -OnWindows $true
+# Supported = True, AssemblyName = System.Drawing.Common, NeedsPackage = True
+```
 
 ---
 
