@@ -99,6 +99,49 @@ function Get-ImageSize {
     finally { $img.Dispose() }
 }
 
+function Get-WorkflowPowerShellBlock {
+    <#
+        Extracts the body of every `run: |` block belonging to a PowerShell step in a workflow
+        file. Deliberately hand-rolled: PowerShell 5.1 has no YAML parser, and adding a module
+        dependency would defeat the point of a self-contained suite.
+    #>
+    param([string]$Path)
+
+    $lines  = @(Get-Content -LiteralPath $Path)
+    $shell  = $null
+    $blocks = @()
+
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+
+        if ($line -match '^\s*-\s+(name|uses):') { $shell = $null }
+        if ($line -match '^\s*shell:\s*(\S+)\s*$') { $shell = $Matches[1] }
+
+        if ($line -match '^(\s*)run:\s*\|\s*$') {
+            $indent = $Matches[1].Length
+            $body   = @()
+
+            for ($j = $i + 1; $j -lt $lines.Count; $j++) {
+                $next = $lines[$j]
+                if ($next.Trim() -eq '') { $body += ''; continue }
+                $nextIndent = ($next -replace '\S.*$').Length
+                if ($nextIndent -le $indent) { break }
+                $body += $next.Substring($indent + 2)
+            }
+
+            if ($shell -in 'powershell', 'pwsh') {
+                $blocks += [pscustomobject]@{
+                    File   = Split-Path $Path -Leaf
+                    Line   = $i + 1
+                    Script = ($body -join "`n")
+                }
+            }
+        }
+    }
+
+    return $blocks
+}
+
 # =============================================================================
 Write-Host "`n=== Static checks ===" -ForegroundColor Cyan
 # =============================================================================
@@ -158,6 +201,37 @@ Test-Case 'PowerShell blocks inside SKILL.md parse (B1 regression)' {
         if ($errors.Count) { $bad++ }
     }
     Assert-Equal 0 $bad 'a documented snippet does not parse'
+}
+
+Test-Case 'PowerShell inside the CI workflows parses (B1 regression, new file type)' {
+    # The workflows embed inline PowerShell, which is exactly the defect class B1 came from.
+    # A broken CI script would otherwise only be discovered on a manual dispatch.
+    $workflowDir = Join-Path $RepoRoot '.github\workflows'
+    Assert-True (Test-Path $workflowDir) 'no workflows folder'
+
+    $blocks = @()
+    foreach ($wf in Get-ChildItem $workflowDir -Filter *.yml) {
+        $blocks += Get-WorkflowPowerShellBlock -Path $wf.FullName
+    }
+    Assert-True ($blocks.Count -ge 2) "expected inline PowerShell steps, found $($blocks.Count)"
+
+    $bad = @()
+    foreach ($b in $blocks) {
+        $errors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseInput($b.Script, [ref]$null, [ref]$errors)
+        if ($errors.Count) { $bad += "$($b.File):$($b.Line) - $($errors[0].Message)" }
+    }
+    Assert-True ($bad.Count -eq 0) ("unparseable workflow step: " + ($bad -join '; '))
+}
+
+Test-Case 'the expensive razor build is opt-in only (B4 regression)' {
+    # It must never be reachable from push or pull_request.
+    $razor = Join-Path $RepoRoot '.github\workflows\razor-matrix.yml'
+    Assert-True (Test-Path $razor) 'razor-matrix workflow is missing'
+
+    $yaml = Get-Content $razor -Raw
+    Assert-True ($yaml -match '(?m)^\s*workflow_dispatch:') 'not dispatch-triggered'
+    Assert-True ($yaml -notmatch '(?m)^\s{2}(push|pull_request):') 'the razor build is wired to push or pull_request'
 }
 
 Test-Case 'relative markdown links resolve' {

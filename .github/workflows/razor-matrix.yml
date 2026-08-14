@@ -1,0 +1,92 @@
+name: razor-matrix
+
+# Opt-in only. This is the one path in the skill that does real, expensive work:
+# a self-contained win-x64 publish per framework, roughly 100-200 MB each. It is
+# deliberately not attached to push or pull_request.
+#
+# It exists because the -Force build path cannot be exercised on a developer box
+# without the matching SDKs installed, and GitHub's windows-latest image ships
+# several of them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      frameworks:
+        description: 'Comma-separated target frameworks to build'
+        required: true
+        default: 'net9.0,net8.0'
+      cleanup:
+        description: 'Delete the scratch build folder afterwards'
+        type: boolean
+        default: true
+
+jobs:
+  razor-matrix:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    # Inputs are passed as environment variables rather than interpolated into the
+    # script body, so nothing from the dispatch form is ever parsed as PowerShell.
+    env:
+      FRAMEWORKS: ${{ inputs.frameworks }}
+      CLEANUP: ${{ inputs.cleanup }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show installed SDKs
+        shell: powershell
+        run: dotnet --list-sdks
+
+      - name: Dry run must create nothing even when a build is possible
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          $tfms = $env:FRAMEWORKS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+
+          $plan = & .\scripts\New-RazorMatrix.ps1 -Framework $tfms
+          if (-not $plan.DryRun) { throw 'Expected a dry run' }
+          if (Test-Path -LiteralPath $plan.WorkRoot) { throw "Dry run created $($plan.WorkRoot)" }
+
+          # Locally this guarantee is trivial - nothing is buildable there. Here at least one
+          # framework has a matching SDK, so this proves the guard holds when there is real
+          # work available to do.
+          $buildable = @($plan.Plan | Where-Object Supported)
+          if ($buildable.Count -lt 1) {
+            throw "No requested framework has a matching SDK on this runner: $($tfms -join ', ')"
+          }
+          Write-Host "Dry run clean; $($buildable.Count) framework(s) buildable."
+
+      - name: Build the razor matrix for real
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          $tfms    = $env:FRAMEWORKS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+          $cleanup = [System.Convert]::ToBoolean($env:CLEANUP)
+          $png     = Join-Path $env:GITHUB_WORKSPACE 'razor-matrix.png'
+
+          $result = & .\scripts\New-RazorMatrix.ps1 -Framework $tfms -Force -Cleanup:$cleanup -OutputPath $png
+
+          if ($result.DryRun) { throw 'Expected a real build, got a dry run' }
+          if (-not (Test-Path -LiteralPath $png)) { throw "No PNG was produced at $png" }
+
+          $built = @($result.Frameworks)
+          if ($built.Count -lt 1) { throw 'No framework produced a razor.deps.json' }
+
+          foreach ($f in $built) {
+            if (-not $f.RuntimePacks) { throw "$($f.Framework) reported no runtime packs" }
+            Write-Host ("  {0} -> {1}" -f $f.Framework, ($f.RuntimePacks -join ', '))
+          }
+
+          if ($cleanup -and (Test-Path -LiteralPath $result.WorkRoot)) {
+            throw "-Cleanup did not remove $($result.WorkRoot)"
+          }
+
+          Write-Host "Built $($built.Count) framework(s); image: $png"
+
+      - name: Upload the rendered matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: razor-matrix
+          path: razor-matrix.png
+          if-no-files-found: error
