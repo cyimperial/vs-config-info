@@ -18,11 +18,37 @@ Triggered by anything that hints at "show me my .NET / VS setup" — including b
 - Short triggers: `vs config`, `dotnet info`, `vsinfo`, `/vs-config`
 - Any troubleshooting where the installed SDK / runtime / RID / base path matters.
 
+## Running the bundled scripts
+
+All rendering is done by tested scripts in `scripts/`. **Never re-implement the drawing
+code inline** — earlier inline snippets were the source of clipped labels and syntax errors.
+
+Invoke every script like this (execution policy is commonly `Restricted`, so the bypass is required):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\<Script>.ps1" @args
+```
+
+`<skill>` is this skill's own folder — resolve it from the skill path you were loaded from.
+Do not hardcode a user profile path.
+
+| Script | Purpose |
+| --- | --- |
+| `Get-VsConfigInfo.ps1` | Timestamp + machine/user + VS installs (vswhere, registry fallback) + raw `dotnet --info` |
+| `New-CmdScreenshot.ps1` | Renders `dotnet --info` as a Command Prompt-styled PNG |
+| `New-FolderIconImage.ps1` | Renders a dotnet install root's subfolders as Explorer-style icon rows |
+| `New-JsonSnippetImage.ps1` | Renders JSON snippets stacked as a VS Code dark-theme PNG |
+| `New-RazorMatrix.ps1` | Builds razor on several TFMs and renders the stacked `razor.deps.json` |
+
+Full parameter reference: [`docs/scripts.md`](docs/scripts.md).
+
 ## Workflow
 
 ### 1. Interactive launcher (always show this first)
 
-Greet the user with a playful menu using the `ask_user` tool. **Do not require them to type anything** — every option is clickable.
+Greet the user with a playful menu using the `ask_user` tool. Every option is clickable —
+the tool automatically offers a freeform input box as well, so do **not** pass any extra
+parameter for that (`ask_user` accepts only `question` and `choices`).
 
 - **question:**
   ```
@@ -30,167 +56,132 @@ Greet the user with a playful menu using the `ask_user` tool. **Do not require t
 
   I'll peek at your local .NET setup. How should I serve it?
   ```
-- **choices** (in this exact order):
-  1. `📸  Screenshot — render dotnet --info as a PNG`
-  2. `📋  Text summary (Recommended) — SDK, Host, runtimes, workloads`
-  3. `🎁  Both — screenshot + summary`
-  4. `🔬  Raw output only — full dotnet --info in a code block`
-  5. `🩺  Doctor mode — summary + flag anything missing/out-of-date`
+- **choices** (in this exact order — the recommended option comes first):
+  1. `📋  Text summary (Recommended) — SDK, Host, runtimes, workloads`
+  2. `🩺  Doctor mode — summary + flag anything missing/out-of-date`
+  3. `📸  Screenshot — render dotnet --info as a PNG`
+  4. `🎁  Both — screenshot + summary`
+  5. `🔬  Raw output only — full dotnet --info in a code block`
   6. `📁  Folder icons — screenshots of dotnet install folders (sdk / NETCore / templates)`
   7. `🎒  All-in-one — dotnet --info + folder icons as SEPARATE PNGs in one timestamped folder`
-  8. `🧪  Razor matrix — build razor on net10/9/8 (self-contained win-x64) and snapshot razor.deps.json stacked top→down`
+  8. `🧪  Razor matrix — builds razor on net10/9/8 (slow, ~100-200 MB per framework)`
   9. `❌  Cancel`
-- **allow_freeform:** `true` (so power users can still type a custom request, but it isn't required)
 
-Skip this prompt **only** if the user's original message already specifies a format (e.g. "just give me a screenshot", "summary please"). If they picked `Cancel`, acknowledge and stop.
+Skip this prompt **only** if the user's original message already specifies a format (e.g.
+"just give me a screenshot", "summary please"). If they picked `Cancel`, acknowledge and stop.
 
-### 2. Run the command via cmd
+### 2. Collect the configuration
 
-Run **all three** of these so the report can include a timestamp, Visual Studio version, and the dotnet info:
+Run the collector once and reuse its output for whichever format was chosen:
 
 ```powershell
-# Timestamp (local time, ISO 8601 + friendly)
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
-
-# Visual Studio installations via vswhere (ships with VS Installer)
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-if (Test-Path $vswhere) {
-    $vs = & $vswhere -all -prerelease -format json | ConvertFrom-Json
-    # Each entry has: displayName, catalog.productDisplayVersion, installationVersion,
-    # installationPath, isPrerelease, productId, channelId
-}
-
-# .NET info
-$dotnet = cmd /c "dotnet --info" | Out-String
+powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\Get-VsConfigInfo.ps1" -AsJson
 ```
 
-If `vswhere.exe` is missing, fall back to scanning `HKLM:\SOFTWARE\Microsoft\VisualStudio\Setup\Instances\*` or report "Visual Studio not detected (vswhere.exe not found)". Never fabricate a VS version.
+It returns `Timestamp`, `Machine`, `User`, `DotnetFound`, `DotnetRoot`, `SdkVersion`,
+`DotnetInfo` (raw text), `VisualStudio[]` and `Notes[]`.
 
-   ```
-   cmd /c "dotnet --info"
-   ```
+The command run is the cmd `dotnet --info` — do **not** substitute `Get-Command dotnet` or
+other PowerShell-native variants.
 
-   Do **not** use `Get-Command dotnet` or other PowerShell-native variants — the request is specifically for the cmd `dotnet --info` output.
+### 3. If `dotnet` is not found
 
-3. **If `dotnet` is not found**, report that clearly and suggest installing the .NET SDK from <https://dotnet.microsoft.com/download>. Do not attempt to fabricate version information. Skip the rest of the workflow.
+`DotnetFound` will be `false` and `Notes` will say so. Report that clearly, suggest installing
+the .NET SDK from <https://dotnet.microsoft.com/download>, and skip the rest of the workflow.
+Never fabricate version information. The same rule applies to Visual Studio: if no install is
+detected, say "No Visual Studio installation detected." rather than guessing a version.
+
+### 4. Render the chosen format
+
+Formats are described below.
+
+## Formats
 
 ### Format: Raw output only
 
-Just paste the unmodified `dotnet --info` output in a fenced code block. No summary, no commentary.
-
-### Format: Doctor mode
-
-Run the **detailed** text-summary format above, then add a `🩺 Diagnostics` section that flags:
-
-- SDK major version older than current LTS, or running on a preview/RC build
-- Mismatch between Host architecture and SDK base path (x86/x64/arm64)
-- Workloads listed as needing restore (e.g. "No workload sets are installed")
-- Multiple SDK versions present — note which is selected and how (`global.json`, latest, env var)
-- Runtime pack gaps (e.g. ASP.NET Core installed but no matching WindowsDesktop pack when project needs it)
-- Preview / unsupported builds
-- Non-standard install paths (anything outside `C:\Program Files\dotnet`)
-- Any deprecated or end-of-life versions, with the EOL date if known
-
-Keep diagnostics factual — derived only from the captured output. Never invent issues. For each flag, include: **what** was detected, **why** it matters, and a **suggested action** (e.g. "Run `dotnet workload restore`").
+Paste the unmodified `DotnetInfo` text in a fenced code block. No summary, no commentary.
 
 ### Format: Text summary
 
-Return the raw command output in a fenced code block, then a **detailed** structured report. Aim for thorough, not minimal — surface every meaningful line `dotnet --info` produces. Always lead with a header block, then the sectioned report.
+Print the raw output in a fenced code block, then a **detailed** structured report. Aim for
+thorough, not minimal — surface every meaningful line `dotnet --info` produces.
 
 #### 🗓️ Report Header (always first)
-- **Generated:** `<local datetime, e.g. 2026-05-23 00:05:40 +08:00>`
-- **Machine:** `$env:COMPUTERNAME`
-- **User:** `$env:USERNAME`
+- **Generated:** the collector's `Timestamp`
+- **Machine:** the collector's `Machine`
+- **User:** the collector's `User`
 
 #### 🎨 Visual Studio
-For **each** VS installation reported by `vswhere`:
-- **Display name** (e.g. *Visual Studio Enterprise 2022*)
-- **Product version** (`catalog.productDisplayVersion`, e.g. `17.12.4`)
-- **Build version** (`installationVersion`)
-- **Channel** (Release / Preview / Pre-release flag)
-- **Installation path**
-- **Product ID** (e.g. `Microsoft.VisualStudio.Product.Enterprise`)
+For **each** entry in `VisualStudio`: display name, product version, build version, channel
+(Release / Preview / prerelease flag), installation path, product ID. List all installs, or
+state that none were detected.
 
-If multiple are installed, list all of them. If none, write **"No Visual Studio installation detected."**
+> Note: `ProductVersion` is free text and may read e.g. `Insiders [12023.133]`. Reproduce it
+> verbatim; never normalise it into a version number that was not reported.
 
 #### 🧩 .NET SDK
-- **Version** (and whether it's GA / preview / RC)
-- **Commit** hash
-- **Workload manifest version**
-- **MSBuild version**
-- **Language versions implied** (e.g. SDK 10.0.x → C# 14 default)
+Version (and whether GA / preview / RC), commit hash, workload manifest version, MSBuild
+version, and the language version implied by the SDK band.
 
 #### 🖥️ Runtime Environment
-- **OS Name / Version / Platform**
-- **RID** (and what it means, e.g. `win-x64` → 64-bit Windows)
-- **Base Path** (where the selected SDK lives)
+OS name / version / platform, RID (and what it means, e.g. `win-x64` → 64-bit Windows), base path.
 
 #### 🧠 Host
-- **Version**
-- **Architecture**
-- **Commit**
+Version, architecture, commit.
 
 #### 📦 Installed SDKs
-- List **every** SDK with version + install path
-- Note which one is currently active (matches Base Path)
-- Flag side-by-side major versions if present
+Every SDK with version + install path. Note which one is active (matches Base Path) and flag
+side-by-side major versions.
 
 #### 🚀 Installed Runtimes
-Group by pack and list **every** version found:
-- `Microsoft.AspNetCore.App` — versions + paths
-- `Microsoft.NETCore.App` — versions + paths
-- `Microsoft.WindowsDesktop.App` — versions + paths
-- Any other packs (e.g. `Microsoft.iOS.Runtime.*`, `Microsoft.Android.Runtime.*`)
+Group by pack and list **every** version found: `Microsoft.AspNetCore.App`,
+`Microsoft.NETCore.App`, `Microsoft.WindowsDesktop.App`, plus any other packs.
 
 #### 🧰 Workloads
-- Installed workload IDs (or explicitly say "none installed")
-- Workload-set mode (`workload sets` vs `loose manifests`)
-- Whether `dotnet workload restore` is needed
-- Manifest version
+Installed workload IDs (or explicitly "none installed"), workload-set mode, whether
+`dotnet workload restore` is needed, manifest version.
 
 #### 🌐 Other Architectures
-- Any "Other architectures found" section reproduced verbatim
-- Any `DOTNET_ROOT*` environment variable lines
+Reproduce any "Other architectures found" section verbatim, plus any `DOTNET_ROOT*` lines.
 
 #### 📁 Global.json / Environment
-- Mention any `global.json` resolution line in the output
-- Any `DOTNET_*` env vars surfaced by `--info`
+Any `global.json` resolution line and any `DOTNET_*` env vars surfaced by `--info`.
 
-Preserve **all** version numbers, commit hashes, and paths verbatim. If a section is empty in the source output, say so explicitly ("No additional runtime packs reported") rather than omitting it.
+Preserve **all** version numbers, commit hashes and paths verbatim. If a section is empty in
+the source output, say so explicitly ("No additional runtime packs reported") rather than omitting it.
+
+### Format: Doctor mode
+
+Run the Text summary, then add a `🩺 Diagnostics` section that flags:
+
+- SDK major version older than current LTS, or a preview/RC build
+- Mismatch between Host architecture and SDK base path (x86/x64/arm64)
+- Workloads needing restore (e.g. "No workload sets are installed")
+- Multiple SDK versions — note which is selected and how (`global.json`, latest, env var)
+- Runtime pack gaps (e.g. ASP.NET Core present but no matching WindowsDesktop pack)
+- Non-standard install paths (anything outside the reported `DotnetRoot`)
+- Deprecated or end-of-life versions, with the EOL date if known
+
+Keep diagnostics factual — derived only from the captured output. Never invent issues. For each
+flag include **what** was detected, **why** it matters, and a **suggested action**
+(e.g. "Run `dotnet workload restore`").
 
 ### Format: Screen capture
 
-Render the cmd output as an actual PNG image (not just a code block screenshot) and save it to the session folder, styled to **match a real Command Prompt window** — exactly what the user would see if they ran the command themselves.
-
-1. Run `cmd /c "dotnet --info"` and capture stdout as a string.
-2. Prepend a single prompt line in the same style as cmd: `C:\Users\<user>>dotnet --info` so the screenshot reads like a real terminal session.
-3. Use PowerShell + `System.Drawing` to draw the text onto a bitmap with **Consolas 12pt**, **black background (#0C0C0C)**, **light-gray text (#CCCCCC)**. No header banner, no colored section dividers — keep it clean cmd-style.
-4. **Filename convention** — name the PNG after the detected version, in this priority order:
-   - If Visual Studio is detected via `vswhere`, use the highest `catalog.productDisplayVersion` → `vs-<version>.png` (e.g. `vs-17.12.4.png`).
-   - Otherwise, fall back to the .NET SDK version from the first line of `dotnet --info` → `dotnet-sdk-<version>.png` (e.g. `dotnet-sdk-10.0.300.png`).
-   - If neither can be parsed, use `vs-config-info.png`.
-5. Save to `C:\Users\v-cimperial\.copilot\session-state\<session-id>\files\<filename>.png`.
-6. Report both the saved path and the version that was used to derive the filename.
-
-Reference snippet (adapt path + size to fit the captured text):
-
 ```powershell
-$text = cmd /c "dotnet --info" | Out-String
-Add-Type -AssemblyName System.Drawing
-$font = New-Object System.Drawing.Font('Consolas', 12)
-$lines = $text -split "`r?`n"
-$tmpBmp = New-Object System.Drawing.Bitmap 1, 1
-$tmpG   = [System.Drawing.Graphics]::FromImage($tmpBmp)
-$width  = ($lines | ForEach-Object { $tmpG.MeasureString($_, $font).Width } | Measure-Object -Maximum).Maximum
-$height = $lines.Count * $font.Height + 20
-$bmp = New-Object System.Drawing.Bitmap ([int]($width + 40)), ([int]$height)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.Clear([System.Drawing.Color]::Black)
-$brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::LightGray)
-$y = 10
-foreach ($l in $lines) { $g.DrawString($l, $font, $brush, 20, $y); $y += $font.Height }
-$bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-CmdScreenshot.ps1"
 ```
+
+The script captures `dotnet --info`, prepends a realistic `C:\Users\<user>>dotnet --info`
+prompt line, and draws it in Consolas 12pt on the real cmd palette (`#0C0C0C` background,
+`#CCCCCC` text) — no banner, no dividers.
+
+Filename is derived automatically: `vs-<product version>.png`, else
+`dotnet-sdk-<version>.png`, else `vs-config-info.png` (free-form version text is sanitised
+for the filesystem). Output goes to the current session `files/` folder unless you pass
+`-OutputRoot` / `-OutputPath` / `-FileName`.
+
+Report the saved path and which version produced the filename.
 
 ### Format: Both
 
@@ -198,103 +189,88 @@ Save the screenshot first, then print the text summary, then reference the saved
 
 ### Format: Folder icons
 
-Render Windows File Explorer-style folder icon screenshots for each subfolder found in **all three** of these install roots:
+Render one PNG per dotnet install root — three total:
 
-1. `C:\Program Files\dotnet\sdk`
-2. `C:\Program Files\dotnet\shared\Microsoft.NETCore.App`
-3. `C:\Program Files\dotnet\templates`
+| PNG | Root |
+| --- | --- |
+| `sdk.png` | `<DotnetRoot>\sdk` |
+| `netcore-app.png` | `<DotnetRoot>\shared\Microsoft.NETCore.App` |
+| `templates.png` | `<DotnetRoot>\templates` |
 
-Rules:
-
-- **One PNG per source root**, three PNGs total. Each PNG shows the subfolder(s) inside that root as **horizontal list rows** — small Windows-style yellow folder icon on the **left**, version name on the **right** — matching the reference look the user provided. Do NOT use a grid with labels underneath; use one row per subfolder.
-- If a root is missing, render a single PNG with text "Path not found: <root>".
-- **Accuracy is mandatory.** Each label MUST be the EXACT, COMPLETE subfolder name returned by `Get-ChildItem -Directory` (e.g. `10.0.300`, not `1` or `10.0`). Verify before saving:
-  - Measure each label's width with `Graphics.MeasureString` using the SAME font you'll draw with, then size the bitmap width to `iconWidth + padding + ceil(maxLabelWidth) + rightMargin`.
-  - When calling `DrawString`, pass a `PointF` (or a `RectangleF` whose width ≥ the measured label width + a few pixels). Do NOT reuse a fixed-width rect from the grid-style folder-icon snippet — that snippet centers labels under icons and will clip horizontal rows.
-  - Set `StringFormat.FormatFlags = NoWrap` and `Trimming = None` so versions like `10.0.300` are never wrapped or ellipsized to `1` / `10.0…`.
-  - After saving, sanity-check: the number of rows in the PNG must equal `(Get-ChildItem $root -Directory).Count`, and each row's label text must exactly match one of those directory names.
-- **Output folder name** — derive from local time using the format `MMDD-HHMM` (e.g. `0523-1216`). Create:
-  `C:\Users\v-cimperial\.copilot\session-state\<session-id>\files\<MMDD-HHMM>\`
-- **PNG filenames** inside that folder:
-  - `sdk.png`
-  - `netcore-app.png`
-  - `templates.png`
-- Folder icon style: yellow body (#FFC83D-ish), darker yellow tab/back, transparent/dark-gray background to match Explorer's dark-mode look. Filename text rendered in Segoe UI 10pt, white/near-white, centered below the icon.
-- After generating, report the folder path and the three filenames.
-
-Reference snippet for drawing one folder icon (adapt for grid layout):
+Use `DotnetRoot` from the collector (it honours `DOTNET_ROOT` and the resolved `dotnet` on
+PATH) — do **not** hardcode `C:\Program Files\dotnet`.
 
 ```powershell
-function Draw-FolderIcon($g, $x, $y, $size, $label) {
-    $back = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(232, 178, 51))
-    $front = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 207, 87))
-    # Back tab
-    $tab = New-Object System.Drawing.Rectangle ($x + [int]($size*0.05)), ($y + [int]($size*0.18)), [int]($size*0.45), [int]($size*0.12)
-    $g.FillRectangle($back, $tab)
-    # Folder body
-    $body = New-Object System.Drawing.Rectangle ($x + [int]($size*0.03)), ($y + [int]($size*0.28)), [int]($size*0.94), [int]($size*0.55))
-    $g.FillRectangle($front, $body)
-    # Label
-    $font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $fmt  = New-Object System.Drawing.StringFormat
-    $fmt.Alignment = [System.Drawing.StringAlignment]::Center
-    $rect = New-Object System.Drawing.RectangleF ([single]$x, [single]($y + $size + 4), [single]$size, 30)
-    $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-    $g.DrawString($label, $font, $white, $rect, $fmt)
-}
+powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-FolderIconImage.ps1" `
+    -Root "<root>" -OutputPath "<folder>\sdk.png"
 ```
+
+Each PNG shows one **horizontal row per subfolder**: a yellow Windows-style folder icon on the
+**left**, the exact folder name on the **right**. The script measures every label with the same
+font it draws with, sizes the bitmap to fit, and uses `NoWrap` + `Trimming::None`, so a version
+like `10.0.400-preview.0.26322.102` can never be clipped to `1` or ellipsized. Rows are sorted
+by version, so `9.0.17` precedes `10.0.9`.
+
+The script prints `[<file>] rows=<n> verified=<bool> labels=<...>` and returns `Verified`.
+**Check it**: if `Verified` is false, report the mismatch instead of presenting the image as accurate.
+A missing root produces a single "Path not found: <root>" image rather than an error.
+
+Save into a timestamped folder (`MMDD-HHMM`) under the session `files/` directory, then report
+the folder path and the three filenames.
 
 ### Format: All-in-one (separate PNGs, one folder)
 
-One launcher choice that produces **five separate PNG files** saved into a single `MMDD-HHMM` timestamped folder under the session `files/` directory. Do NOT merge them into a single image — keep them as distinct files.
+Produces **five separate PNG files** in a single `MMDD-HHMM` folder under the session `files/`
+directory. Do **not** merge them into one image.
 
-Files produced:
+1. `dotnet-info.png` — pass `-FileName 'dotnet-info.png'` to `New-CmdScreenshot.ps1`
+2. `sdk.png`
+3. `netcore-app.png`
+4. `templates.png`
+5. `razor-matrix.png`
 
-1. `dotnet-info.png` — cmd-styled `dotnet --info` screenshot (same look as the **Screen capture** format, but with this fixed filename for the bundle).
-2. `sdk.png` — horizontal folder icons for `C:\Program Files\dotnet\sdk` (same look as **Folder icons**).
-3. `netcore-app.png` — horizontal folder icons for `C:\Program Files\dotnet\shared\Microsoft.NETCore.App`.
-4. `templates.png` — horizontal folder icons for `C:\Program Files\dotnet\templates`.
-5. `razor-matrix.png` — stacked razor.deps.json snippets for net10.0 / net9.0 / net8.0 (same look as **Razor matrix**). The bundle MUST run the full razor build sequence (`dotnet new razor -f netX.0 --force` + `dotnet publish -r win-x64 --self-contained` for each TFM) to produce this file.
+⚠️ Item 5 runs real builds. Because this is slow and writes outside the session folder,
+**confirm with the user before starting** (see Razor matrix below). If they decline, produce
+the other four and say the bundle omitted the razor matrix.
 
-After generating, report the folder path and list all five filenames produced, plus a short per-framework runtimepack summary from the razor builds.
+Afterwards report the folder path, every filename produced, and a short per-framework
+runtimepack summary.
 
-### Format: Razor matrix (build net10/9/8 and snapshot deps.json)
+### Format: Razor matrix
 
-Build a Razor Pages template on three target frameworks (self-contained win-x64) and render a single combined PNG showing each `razor.deps.json` snippet stacked **top → bottom in this order**: net10.0, net9.0, net8.0.
+Builds a Razor Pages app on several target frameworks (self-contained win-x64) and renders each
+`razor.deps.json` targets section stacked top → bottom: net10.0, net9.0, net8.0.
 
-Sequence (run from `C:\Users\v-cimperial\razor` — create it if missing):
+⚠️ **This is the only format that writes outside the session folder and costs real time and
+disk (~100-200 MB per framework).** Always:
 
-```cmd
-md razor
-cd razor
-:: For each TFM in 10.0, 9.0, 8.0
-dotnet new razor -f netX.0 --force
-dotnet publish -r win-x64 --self-contained
-```
+1. Run the dry run first and show the plan — it reports which frameworks can actually build:
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-RazorMatrix.ps1"
+   ```
+2. Confirm with the user via `ask_user` before building.
+3. Only then re-run with `-Force` (add `-Cleanup` to delete the scratch build afterwards):
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-RazorMatrix.ps1" -Force -Cleanup
+   ```
 
-For each TFM, locate the generated `bin\Release\netX.0\win-x64\publish\razor.deps.json`, and extract the **targets** section showing:
+Safety behaviour built into the script — rely on it rather than scripting the builds yourself:
 
-- `".NETCoreApp,Version=vX.0"` (empty `{}`)
-- `".NETCoreApp,Version=vX.0/win-x64"` with the `razor/1.0.0` entry, its `dependencies`, and `runtimepack.Microsoft.NETCore.App.Runtime.win-x64` / `runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64` lines.
+- Each framework builds in its **own** subfolder, so `dotnet new --force` can never clobber
+  another framework's project or a user's files.
+- The scratch root defaults to `%LOCALAPPDATA%\vs-config-info\razor-matrix` and the script
+  refuses to reuse a non-empty folder it did not create.
+- Frameworks whose SDK is not installed are **skipped, not failed**.
 
-Render each snippet as **VS Code dark-theme JSON** (matching the user's reference image):
+Rendering theme (handled by `New-JsonSnippetImage.ps1`): `#1E1E1E` background, all quoted
+strings — keys and values — in `#CE9178`, punctuation in `#D4D4D4`, a subtle `#404040` indent
+guide, Consolas 14pt, no badge labels.
 
-- Background: `#1E1E1E`
-- **All quoted strings** (keys AND values) in orange `#CE9178`
-- Punctuation `{ } [ ] , :`: light gray `#D4D4D4`
-- Subtle vertical indent guide line in `#404040` on the left edge of each snippet
-- Font: **Consolas 14pt**, line height = font height + 2px
-- **No badge labels** — the version numbers inside the JSON identify each snippet
-
-Stack all three vertically (10 on top, 9 middle, 8 bottom) into a single PNG.
-
-**Filename:** `razor-matrix.png`
-**Folder:** the standard `MMDD-HHMM` timestamped folder under session `files/`.
-
-After generating, report the folder and filename, plus a short per-framework summary (TFM + runtimepack versions detected).
+Report the folder, the filename, and a per-framework TFM + runtimepack summary.
 
 ## Output style
 
 - Never invent values that aren't in the actual command output.
 - Do not add commentary about features of listed SDK versions unless the user asks.
-- Preserve versions, paths, and commit hashes verbatim — they're often used for troubleshooting.
+- Preserve versions, paths and commit hashes verbatim — they're often used for troubleshooting.
+- Never hardcode a user profile path; resolve the session folder or pass `-OutputRoot`.

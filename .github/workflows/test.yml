@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # This skill targets Windows PowerShell 5.1 and GDI+, so it can only be
+    # meaningfully tested on a Windows runner.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show environment
+        shell: powershell
+        run: |
+          $PSVersionTable | Format-List
+          dotnet --info
+
+      - name: Run test suite
+        shell: powershell
+        run: |
+          # Matches the documented invocation: immune to the runner's execution policy.
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

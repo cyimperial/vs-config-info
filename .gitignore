@@ -1,0 +1,13 @@
+# Rendered output. Every image this skill produces is a generated artifact that
+# describes one specific machine - it must never be committed.
+*.png
+!docs/**/*.png
+
+# Scratch folders created by New-RazorMatrix.ps1 when run with -Force.
+razor-matrix/
+.vs-config-info
+
+# Build/tooling noise
+bin/
+obj/
+*.binlog
