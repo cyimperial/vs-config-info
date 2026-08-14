@@ -170,6 +170,15 @@ Test-Case 'SKILL.md description fits the discovery budget' {
     Assert-True ($desc.Length -lt 1024) "description is $($desc.Length) chars"
 }
 
+Test-Case 'SKILL.md stays lean (P5)' {
+    # The whole file is loaded into context every time the skill activates, so it routes and
+    # delegates detail to docs/ rather than explaining how the scripts work internally.
+    $file  = Get-Item (Join-Path $RepoRoot 'SKILL.md')
+    $lines = @(Get-Content $file.FullName).Count
+    Assert-True ($lines -le 200) "SKILL.md has grown to $lines lines (budget 200)"
+    Assert-True ($file.Length -le 10240) "SKILL.md has grown to $($file.Length) bytes (budget 10 KB)"
+}
+
 Test-Case 'no hardcoded user profile paths in shipped files (B2 regression)' {
     # docs/audit-*.md and docs/fixes-*.md intentionally quote the old defective paths.
     # Everything else - including this harness and its docs - must stay machine-agnostic.

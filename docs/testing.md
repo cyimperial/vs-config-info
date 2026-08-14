@@ -13,7 +13,7 @@ self-contained script so that a fresh clone on a stock Windows box can verify it
 
 | Group | Tests | Examples |
 | --- | --- | --- |
-| Static checks | 10 | Every script parses; front matter is well formed; the `description` fits the discovery budget; no hardcoded user profile paths; every PowerShell block inside `SKILL.md` **and inside the CI workflows** parses; relative markdown links resolve; the expensive razor build is opt-in only |
+| Static checks | 11 | Every script parses; front matter is well formed; the `description` fits the discovery budget; `SKILL.md` stays within its size budget; no hardcoded user profile paths; every PowerShell block inside `SKILL.md` **and inside the CI workflows** parses; relative markdown links resolve; the expensive razor build is opt-in only |
 | Helper unit tests | 18 | `Get-JsonProperty` returns a default instead of throwing; `ConvertTo-SortableVersion` orders `9.0.17` before `10.0.9`; `Format-JsonIndent` normalises indentation without touching string values; the drawing plan picks the right assembly per host |
 | Collector | 3 | `Get-VsConfigInfo` returns the documented shape, emits valid JSON, and never reports the `Host:` version as an SDK version |
 | Renderers | 8 | Each image script writes a plausible PNG; long labels are not clipped; a missing root yields a placeholder rather than an exception; the razor dry run creates nothing |
@@ -53,7 +53,7 @@ host runtime installed. Those tests call `Assert-Skip` and report `SKIP` rather 
 A skip is not a pass. The summary line reports skips separately so they stay visible:
 
 ```
-  Passed: 38   Failed: 0   Skipped: 1
+  Passed: 39   Failed: 0   Skipped: 1
 ```
 
 Tests are written to skip only when the *environment* cannot support them, never to paper over

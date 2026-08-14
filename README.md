@@ -100,7 +100,7 @@ vs-config-info/
 │   ├── New-JsonSnippetImage.ps1    # VS Code dark-theme JSON
 │   └── New-RazorMatrix.ps1         # guarded multi-TFM razor build
 └── tests/
-    └── Invoke-SkillTests.ps1       # 39 tests, no external dependencies
+    └── Invoke-SkillTests.ps1       # 40 tests, no external dependencies
 ```
 
 All rendering lives in `scripts/` so it can be parsed, executed and verified — see
@@ -135,7 +135,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-RazorMatrix.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps1
 ```
 
-39 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
+40 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
 fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md).
 
 The expensive razor build is exercised separately by a manual-dispatch workflow, so it never
