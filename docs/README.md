@@ -2,8 +2,10 @@
 
 | Document | What it covers |
 | --- | --- |
+| [`installation.md`](installation.md) | Requirements, where the CLI looks for skills, verifying the install, troubleshooting |
 | [`scripts.md`](scripts.md) | Parameter reference for everything in `scripts/` |
 | [`testing.md`](testing.md) | How to run the test suite, what it covers, and how CI runs it |
+| [`test-result.md`](test-result.md) | The latest full run, verbatim, and what a green run does and does not prove |
 | [`audit-2026-08-14.md`](audit-2026-08-14.md) | The skill review that triggered the rewrite, with scoring rubric |
 | [`fixes-2026-08-14.md`](fixes-2026-08-14.md) | Every issue found and how it was fixed, with before/after |
 

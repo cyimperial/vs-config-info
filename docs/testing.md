@@ -9,6 +9,9 @@ Exit code `0` means every test passed. Failures are listed again at the end of t
 The suite has **no external dependencies** — no Pester, no modules to install. It is a single
 self-contained script so that a fresh clone on a stock Windows box can verify itself.
 
+[`test-result.md`](test-result.md) records the latest full run verbatim, so you have something
+concrete to compare your own output against.
+
 ## What it covers
 
 | Group | Tests | Examples |

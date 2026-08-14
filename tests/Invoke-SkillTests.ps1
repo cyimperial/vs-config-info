@@ -186,8 +186,10 @@ Test-Case 'no hardcoded user profile paths in shipped files (B2 regression)' {
         (Join-Path $RepoRoot 'SKILL.md')
         (Join-Path $RepoRoot 'README.md')
         (Join-Path $RepoRoot 'docs\README.md')
+        (Join-Path $RepoRoot 'docs\installation.md')
         (Join-Path $RepoRoot 'docs\scripts.md')
         (Join-Path $RepoRoot 'docs\testing.md')
+        (Join-Path $RepoRoot 'docs\test-result.md')
     ) + @(Get-ChildItem $ScriptsRoot -Filter *.ps1 | Select-Object -ExpandProperty FullName) `
       + @(Get-ChildItem $PSScriptRoot -Filter *.ps1 | Select-Object -ExpandProperty FullName)
 

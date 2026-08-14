@@ -46,6 +46,10 @@ git clone https://github.com/cyimperial/vs-config-info.git `
 
 That's it — the next time you start `copilot`, the skill is auto-discovered via its `SKILL.md` front matter.
 
+Copilot CLI also scans `.github/skills/` in a repository, so you can commit the skill for the
+whole team instead. Full details — project-scoped installs, `/skills add`, verification steps and
+troubleshooting — are in [`docs/installation.md`](docs/installation.md).
+
 ### Manual install (alternative)
 
 ```powershell
@@ -88,8 +92,10 @@ vs-config-info/
 │   └── razor-matrix.yml            # manual-only: runs the real razor build
 ├── docs/
 │   ├── README.md                   # design rules + how to run the scripts
+│   ├── installation.md             # requirements, install, verify, troubleshooting
 │   ├── scripts.md                  # script parameter reference
 │   ├── testing.md                  # how to run the tests + what they cover
+│   ├── test-result.md              # latest full test run, verbatim
 │   ├── audit-2026-08-14.md         # skill review + scoring rubric
 │   └── fixes-2026-08-14.md         # issues found and how they were fixed
 ├── scripts/
@@ -136,7 +142,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps
 ```
 
 40 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
-fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md).
+fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md) for what the
+suite covers, and [`docs/test-result.md`](docs/test-result.md) for the latest full run verbatim.
 
 The expensive razor build is exercised separately by a manual-dispatch workflow, so it never
 runs on push. See [Why the razor build is a separate, manual workflow](docs/testing.md).
