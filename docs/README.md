@@ -2,7 +2,7 @@
 
 | Document | What it covers |
 | --- | --- |
-| [`installation.md`](installation.md) | Requirements, where the CLI looks for skills, verifying the install, troubleshooting |
+| [`installation.md`](installation.md) | Requirements, limitations, where the CLI looks for skills, verifying the install, troubleshooting |
 | [`scripts.md`](scripts.md) | Parameter reference for everything in `scripts/` |
 | [`testing.md`](testing.md) | How to run the test suite, what it covers, and how CI runs it |
 | [`test-result.md`](test-result.md) | The latest full run, verbatim, and what a green run does and does not prove |

@@ -34,6 +34,10 @@ Formats that build projects are opt-in and dry-run by default.
 > The bundled scripts are launched with `-ExecutionPolicy Bypass`, so they work on a default
 > `Restricted` machine without changing any system policy.
 
+Known limitations — VS 2015 and earlier are not detected, the razor matrix is `win-x64` only, and
+PowerShell 7 is unverified — are listed in
+[`docs/installation.md`](docs/installation.md).
+
 ## 🚀 Setup
 
 Install the skill by cloning it into your Copilot CLI skills folder:

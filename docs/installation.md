@@ -22,6 +22,37 @@ copilot --version
 $PSVersionTable.PSVersion    # 5.1.x is expected
 ```
 
+## Limitations
+
+Worth knowing before you install — none of these are bugs, and several are deliberate choices to
+avoid reporting something the skill cannot actually confirm.
+
+| Area | Limitation |
+| --- | --- |
+| Platform | **Windows only.** The skill depends on `cmd`, `vswhere` and GDI+. On other platforms the scripts refuse with a reason rather than half-working |
+| Host | Windows PowerShell 5.1 is the only **verified** host. PowerShell 7 is detected and explained, but has never been run end to end — only the decision logic is covered by tests |
+| Visual Studio | Detection uses `vswhere.exe` from its fixed Installer location, queried with `-all -prerelease`. **VS 2015 and earlier are not reported** — neither `vswhere` nor the `Setup\Instances` registry fallback covers them. That fallback engages only when `vswhere.exe` is missing entirely, not per install |
+| .NET | `dotnet` is invoked from `PATH`. If it is absent the skill says so instead of hunting for it, and it never reports the `Host:` version as an SDK |
+| Screenshot | A **rendering** of captured stdout on the cmd palette — not a real screen capture. There is no window chrome and no console was ever displayed |
+| Folder icons | Explorer-**style** icons drawn with GDI+, not the real shell icons extracted from the system, so they do not follow your icon theme |
+| Output location | Outside a Copilot session, the output root falls back to the **newest** folder under `~/.copilot/session-state`, which may not be the session you expect. Pass `-OutputRoot` when it matters; the final fallback is `%TEMP%\vs-config-info` |
+| Return values | `powershell -File` flattens returned objects to text, so the image scripts also print a machine-readable line such as `[sdk.png] rows=3 verified=True`. Array parameters can only be passed in-process |
+
+### The razor matrix
+
+The one format with real caveats, because it is the only one that builds anything:
+
+- **A matching SDK is required per framework, by major version.** A 9.x SDK can target `net8.0`,
+  but the script will not use it that way. Frameworks without a same-major SDK are skipped rather
+  than quietly built by a different one — conservative on purpose, since the point of the format is
+  to show what each SDK actually produces.
+- **`win-x64` self-contained only.** The RID is not configurable, including on arm64.
+- **Roughly 100–200 MB per framework**, and it is the only part of the skill that writes outside
+  the session folder. It dry-runs unless you pass `-Force`; `-Cleanup` removes the scratch folder.
+- **The `-Force` path has never executed on a developer machine here.** It is exercised only by the
+  manual `razor-matrix` workflow, which is the only environment with the necessary SDKs. See
+  [`test-result.md`](test-result.md).
+
 ## Where the CLI looks for skills
 
 Copilot CLI discovers skills from several roots. Any of these works — pick based on who should
@@ -181,9 +212,9 @@ need an SDK, such as the razor matrix, will say so rather than producing an empt
 
 ### The razor matrix builds nothing
 
-It only builds frameworks you have a matching SDK for, and it dry-runs unless you pass `-Force`.
 A dry run listing every framework as `SKIP - no matching SDK installed` is correct behaviour, not
-a failure. See [`scripts.md`](scripts.md).
+a failure — it dry-runs unless you pass `-Force`, and it only builds frameworks with a same-major
+SDK. See [Limitations](#the-razor-matrix) and [`scripts.md`](scripts.md).
 
 ---
 
