@@ -151,7 +151,3 @@ suite covers, and [`docs/test-result.md`](docs/test-result.md) for the latest fu
 
 The expensive razor build is exercised separately by a manual-dispatch workflow, so it never
 runs on push. See [Why the razor build is a separate, manual workflow](docs/testing.md).
-
-## 📜 License
-
-MIT — see [LICENSE](LICENSE).
