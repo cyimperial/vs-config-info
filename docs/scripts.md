@@ -25,7 +25,7 @@ Dot-sourced helper library. Not run directly.
 | `Get-VsConfigDrawingPlan` | Pure: decides which drawing assembly the current host needs |
 | `Initialize-VsConfigDrawing` | Loads GDI+ using that plan, with an actionable error if it cannot |
 | `Get-VsConfigOutputRoot` | Resolves the artifact folder: `-OutputRoot` → `$env:COPILOT_SESSION_FILES` → newest `~/.copilot/session-state/*/files` → `$env:TEMP\vs-config-info` |
-| `New-VsConfigTimestampFolder` | Creates an `MMDD-HHMM` folder under the resolved root |
+| `New-VsConfigTimestampFolder` | Creates a `vs-config-info-yyyy-MM-dd_HH-mm-ss` folder under the resolved root, using local time |
 | `Get-DotnetRootPath` | `$env:DOTNET_ROOT` → resolved `dotnet` on PATH → `%ProgramFiles%\dotnet` |
 | `Get-DotnetInstallRoots` | Returns the `sdk`, `netcore-app` and `templates` roots |
 | `Get-JsonProperty` | Reads a dotted path off a `ConvertFrom-Json` object, returning a default instead of throwing under `Set-StrictMode` |

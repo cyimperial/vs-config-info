@@ -140,13 +140,13 @@ function Get-VsConfigOutputRoot {
 function New-VsConfigTimestampFolder {
     <#
     .SYNOPSIS
-        Creates (and returns) an MMDD-HHMM folder under the resolved output root.
+        Creates a vs-config-info-yyyy-MM-dd_HH-mm-ss folder under the resolved output root.
     #>
     [CmdletBinding()]
     param([string]$OutputRoot)
 
     $root  = Get-VsConfigOutputRoot -OutputRoot $OutputRoot
-    $stamp = Get-Date -Format 'MMdd-HHmm'
+    $stamp = 'vs-config-info-' + (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss')
     return (New-Item -ItemType Directory -Path (Join-Path $root $stamp) -Force).FullName
 }
 

@@ -408,6 +408,21 @@ Test-Case 'Get-VsConfigOutputRoot honours an explicit root' {
     Assert-Equal (Get-Item -LiteralPath $explicit).FullName (Get-Item -LiteralPath $result).FullName 'returned a different folder'
 }
 
+Test-Case 'New-VsConfigTimestampFolder uses a readable full date and time under the requested root' {
+    $root = Join-Path $TempRoot 'timestamp-root'
+    $oldFolder = Join-Path $root '1016-0231'
+    New-Item -ItemType Directory -Path $oldFolder -Force | Out-Null
+    $result = New-VsConfigTimestampFolder -OutputRoot $root
+    $folder = Get-Item -LiteralPath $result
+    Assert-True $folder.PSIsContainer 'expected an output directory'
+    Assert-Equal (Get-Item -LiteralPath $root).FullName $folder.Parent.FullName 'wrong output root'
+    Assert-True ($folder.Name -match '^vs-config-info-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$') `
+        'folder name must include the skill name, full date and seconds'
+    $timestamp = $folder.Name.Substring('vs-config-info-'.Length)
+    [void][datetime]::ParseExact($timestamp, 'yyyy-MM-dd_HH-mm-ss', [System.Globalization.CultureInfo]::InvariantCulture)
+    Assert-True (Test-Path -LiteralPath $oldFolder) 'existing output folders must remain unchanged'
+}
+
 # --- P4: host compatibility --------------------------------------------------
 # Get-VsConfigDrawingPlan is pure, so the PowerShell 7 and non-Windows branches are
 # reachable from Windows PowerShell 5.1 - where they would otherwise never execute.

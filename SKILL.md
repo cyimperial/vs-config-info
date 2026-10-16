@@ -152,10 +152,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-FolderI
 
 Each script prints `[<file>] rows=<n> verified=<bool> labels=<...>`. **Check `Verified`**: if it
 is false, report the mismatch rather than presenting the image as accurate. A missing root
-produces a "Path not found" image instead of an error. Save into a timestamped `MMDD-HHMM`
-folder under the session `files/` directory, then report the folder and the three filenames.
+produces a "Path not found" image instead of an error. Save under session `files/` as
+`vs-config-info-yyyy-MM-dd_HH-mm-ss`; report the folder and three filenames.
 
-**All-in-one** — five *separate* PNGs in one `MMDD-HHMM` folder; never merge:
+**All-in-one** — five *separate* PNGs in one timestamped folder (same naming); never merge:
 `dotnet-info.png` (`-FileName`), `sdk.png`, `netcore-app.png`, `templates.png`, `razor-matrix.png`.
 Require the Razor dry-run and explicit confirmation below for `/vs-config-info all`.
 If declined or unavailable, produce the other four; report that the bundle omitted the razor matrix.

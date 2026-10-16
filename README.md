@@ -138,6 +138,16 @@ Generated PNGs and bundles are saved to your active Copilot CLI session folder:
 %USERPROFILE%\.copilot\session-state\<session-id>\files\
 ```
 
+Folder-icon bundles, all-in-one bundles and the default Razor matrix output use a subfolder
+named `vs-config-info-yyyy-MM-dd_HH-mm-ss`, with the local date and time down to seconds:
+
+```text
+%USERPROFILE%\.copilot\session-state\<session-id>\files\vs-config-info-2026-10-16_02-31-57\
+```
+
+Existing output folders are not renamed. Standalone screenshot filenames and explicit output
+paths remain unchanged.
+
 ## 🗂️ Repository layout
 
 ```
@@ -164,7 +174,7 @@ vs-config-info/
 │   ├── New-JsonSnippetImage.ps1    # VS Code dark-theme JSON
 │   └── New-RazorMatrix.ps1         # guarded multi-TFM razor build
 └── tests/
-    └── Invoke-SkillTests.ps1       # 52 tests, no external dependencies
+    └── Invoke-SkillTests.ps1       # 53 tests, no external dependencies
 ```
 
 All rendering lives in `scripts/` so it can be parsed, executed and verified — see
@@ -199,7 +209,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-RazorMatrix.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps1
 ```
 
-52 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
+53 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
 fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md) for what the
 suite covers, and [`docs/test-result.md`](docs/test-result.md) for the latest full run verbatim.
 
