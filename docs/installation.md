@@ -42,16 +42,17 @@ avoid reporting something the skill cannot actually confirm.
 
 The one format with real caveats, because it is the only one that builds anything:
 
-- **A matching SDK is required per framework, by major version.** A 9.x SDK can target `net8.0`,
-  but the script will not use it that way. Frameworks without a same-major SDK are skipped rather
-  than quietly built by a different one — conservative on purpose, since the point of the format is
-  to show what each SDK actually produces.
+- **An SDK is required, but not a same-major SDK per framework.** The script attempts
+  `net11.0`, `net10.0`, `net9.0` and `net8.0` using available SDKs/templates and records actual
+  command failures instead of skipping targets based on installed SDK major versions.
+  A runtime alone cannot run `dotnet new` or `dotnet publish`. An installed target runtime is
+  not required for self-contained publishing; restore may download the needed packs.
 - **`win-x64` self-contained only.** The RID is not configurable, including on arm64.
 - **Roughly 100–200 MB per framework**, and it is the only part of the skill that writes outside
   the session folder. It dry-runs unless you pass `-Force`; `-Cleanup` removes the scratch folder.
-- **The `-Force` path has never executed on a developer machine here.** It is exercised only by the
-  manual `razor-matrix` workflow, which is the only environment with the necessary SDKs. See
-  [`test-result.md`](test-result.md).
+- **Target support is not guaranteed.** Templates, selected SDK, `global.json`, restore feeds
+  and network access can affect each attempt. Failures are detailed in
+  `razor-matrix.report.json` beside the image; remaining frameworks are still attempted.
 
 ## Where the CLI looks for skills
 
@@ -212,9 +213,11 @@ need an SDK, such as the razor matrix, will say so rather than producing an empt
 
 ### The razor matrix builds nothing
 
-A dry run listing every framework as `SKIP - no matching SDK installed` is correct behaviour, not
-a failure — it dry-runs unless you pass `-Force`, and it only builds frameworks with a same-major
-SDK. See [Limitations](#the-razor-matrix) and [`scripts.md`](scripts.md).
+A dry run never builds. With an SDK installed it plans attempts for all requested frameworks;
+without one it explains the prerequisite. After confirmation and `-Force`, unsupported targets
+or restore failures are recorded in `razor-matrix.report.json`. Remaining targets are still
+attempted. If all fail, the script reports an error and the saved report path instead of a PNG.
+See [Limitations](#the-razor-matrix) and [`scripts.md`](scripts.md).
 
 ---
 

@@ -4,9 +4,8 @@ name: razor-matrix
 # a self-contained win-x64 publish per framework, roughly 100-200 MB each. It is
 # deliberately not attached to push or pull_request.
 #
-# It exists because the -Force build path cannot be exercised on a developer box
-# without the matching SDKs installed, and GitHub's windows-latest image ships
-# several of them.
+# It exercises real SDK/template resolution and package restore separately from
+# the normal suite, which uses a fake dotnet executable for build-path tests.
 
 on:
   workflow_dispatch:
@@ -48,14 +47,12 @@ jobs:
           if (-not $plan.DryRun) { throw 'Expected a dry run' }
           if (Test-Path -LiteralPath $plan.WorkRoot) { throw "Dry run created $($plan.WorkRoot)" }
 
-          # Locally this guarantee is trivial - nothing is buildable there. Here at least one
-          # framework has a matching SDK, so this proves the guard holds when there is real
-          # work available to do.
+          # Supported means eligible to attempt, not proven target/template support.
           $buildable = @($plan.Plan | Where-Object Supported)
           if ($buildable.Count -lt 1) {
-            throw "No requested framework has a matching SDK on this runner: $($tfms -join ', ')"
+            throw "No SDK is available to attempt the requested frameworks: $($tfms -join ', ')"
           }
-          Write-Host "Dry run clean; $($buildable.Count) framework(s) buildable."
+          Write-Host "Dry run clean; $($buildable.Count) framework(s) planned."
 
       - name: Build the razor matrix for real
         shell: powershell
@@ -69,6 +66,7 @@ jobs:
 
           if ($result.DryRun) { throw 'Expected a real build, got a dry run' }
           if (-not (Test-Path -LiteralPath $png)) { throw "No PNG was produced at $png" }
+          if (-not (Test-Path -LiteralPath $result.ReportPath)) { throw 'No detailed report was produced' }
 
           $built = @($result.Frameworks)
           if ($built.Count -lt 1) { throw 'No framework produced a razor.deps.json' }
@@ -83,10 +81,14 @@ jobs:
           }
 
           Write-Host "Built $($built.Count) framework(s); image: $png"
+          if (-not $result.Succeeded) { throw "Matrix incomplete. See $($result.ReportPath)" }
 
-      - name: Upload the rendered matrix
+      - name: Upload the rendered matrix and detailed report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: razor-matrix
-          path: razor-matrix.png
+          path: |
+            razor-matrix.png
+            razor-matrix.report.json
           if-no-files-found: error

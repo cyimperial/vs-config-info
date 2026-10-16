@@ -16,10 +16,20 @@ concrete to compare your own output against.
 
 | Group | Tests | Examples |
 | --- | --- | --- |
-| Static checks | 11 | Every script parses; front matter is well formed; the `description` fits the discovery budget; `SKILL.md` stays within its size budget; no hardcoded user profile paths; every PowerShell block inside `SKILL.md` **and inside the CI workflows** parses; relative markdown links resolve; the expensive razor build is opt-in only |
+| Static checks | 15 | Every script parses; front matter is well formed; the `description` fits the discovery budget; `SKILL.md` stays within its size budget; no hardcoded user profile paths; every PowerShell block inside `SKILL.md` **and inside the CI workflows** parses; relative markdown links resolve; the expensive razor build is opt-in only; all eight direct formats map to existing workflows with usage examples; routing rejects unknown arguments before collection; the launcher has an explicit non-interactive fallback; both `all` and `razor` retain dry-run and build confirmation |
 | Helper unit tests | 18 | `Get-JsonProperty` returns a default instead of throwing; `ConvertTo-SortableVersion` orders `9.0.17` before `10.0.9`; `Format-JsonIndent` normalises indentation without touching string values; the drawing plan picks the right assembly per host |
 | Collector | 3 | `Get-VsConfigInfo` returns the documented shape, emits valid JSON, and never reports the `Host:` version as an SDK version |
-| Renderers | 8 | Each image script writes a plausible PNG; long labels are not clipped; a missing root yields a placeholder rather than an exception; the razor dry run creates nothing |
+| Renderers | 6 | Each image script writes a plausible PNG; long labels are not clipped; a missing root yields a placeholder rather than an exception |
+| Razor matrix | 10 | A fake `dotnet.exe` verifies all four targets are attempted with only a .NET 10 SDK; dry run creates nothing; runtime-only hosts cannot build; single-target success keeps array shapes; compact snippets preserve target/dependency names and runtime pack versions without nested asset metadata, including empty targets; new/publish/deps failures continue; complete failure saves a report before throwing; cleanup preserves reports; work-root, output-path and framework guards hold |
+
+Direct-format routing lives in `SKILL.md`, not in a PowerShell dispatcher. Its regression tests
+check the instruction contract and documented mappings; they do not execute a Copilot conversation.
+For a conversational check, invoke each command in the usage table in [`../README.md`](../README.md)
+and verify that it skips the launcher. Also check `/vs-config-info` (launcher),
+`/vs-config-info unknown` and `/vs-config-info summary extra` (choices only, no scripts), and
+no-format invocation without interactive input (direct-invocation guidance, no summary).
+For `razor` and `all`, verify that the plan precedes a separate build confirmation and that
+declined or unavailable confirmation never starts a build; `all` must still produce four PNGs.
 
 ## Testing branches that cannot run here
 
@@ -65,8 +75,11 @@ a product failure.
 ## Isolation
 
 The suite writes exclusively to a per-run folder under `%TEMP%` (`vsci-tests-<timestamp>`) and
-removes it afterwards. It never builds, never touches `Program Files`, and never runs the razor
-matrix with `-Force`.
+removes it afterwards. It never builds a real Razor project or touches `Program Files`.
+Razor tests compile a tiny fake `dotnet.exe` with the built-in C# compiler and temporarily put
+it first on the test process's `PATH`. Only that fake executable handles `-Force` runs in these
+tests; it creates fixture deps JSON instead of restoring packages or publishing applications.
+The original `PATH` and fixture environment are restored after every case.
 
 > `%TEMP%` resolves to an 8.3 short path (`C:\Users\<user>~1\...`) while the scripts under test
 > return long paths. The harness canonicalises its temp root with `(Get-Item ...).FullName`,
@@ -92,17 +105,16 @@ work — a self-contained `win-x64` publish per framework, roughly 100–200 MB 
 run automatically, so it lives in its own `workflow_dispatch`-only workflow, and a static test
 asserts it is not wired to `push` or `pull_request`.
 
-That workflow is also the only place the `-Force` path can be exercised at all: it needs SDKs
-matching each requested framework, which a given developer machine usually lacks. It checks
-three things a dry run cannot:
+That workflow exercises real commands rather than the fake executable. It uses the runner's
+SDKs/templates, with no same-major SDK gate, and checks what a dry run cannot:
 
-1. the dry run still creates nothing **when a build is genuinely possible** (locally that
-   guarantee is vacuous, because nothing is buildable),
-2. the build produces a PNG and reports runtime packs per framework,
+1. the dry run still creates nothing when an SDK is available to attempt builds,
+2. the build produces a PNG and a detailed JSON report with runtime packs per framework,
 3. `-Cleanup` really removes the scratch folder.
 
-The rendered image is uploaded as an artifact, because the only way to confirm a renderer is
-correct is to look at it.
+Partial failure fails the workflow explicitly rather than treating a PNG as a complete matrix.
+The image and JSON report are uploaded even after build failure, so full stdout/stderr remain
+available when some or all targets fail.
 
 ### The workflows are themselves tested
 

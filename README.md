@@ -8,15 +8,16 @@ Ask Copilot CLI things like _"show me my dotnet info"_, _"vs config"_, or _"what
 
 ## ✨ Features
 
-The skill exposes an interactive launcher with multiple output formats:
+The skill supports direct format selection or an interactive launcher:
 
 - 📋 **Text summary** — structured report of SDK, Host, runtimes, workloads, VS installs
 - 🩺 **Doctor mode** — summary + diagnostics (EOL versions, arch mismatches, missing workloads…)
 - 🔬 **Raw output** — unmodified `dotnet --info` in a code block
 - 📸 **Screenshot** — `dotnet --info` rendered as a cmd-styled PNG
+- 🎁 **Both** — screenshot + text summary
 - 📁 **Folder icons** — Windows Explorer-style PNGs of `sdk` / `Microsoft.NETCore.App` / `templates`
 - 🎒 **All-in-one** — bundles the screenshot + folder icons + razor matrix into one timestamped folder
-- 🧪 **Razor matrix** — builds a Razor Pages app on net10/9/8 (self-contained win-x64) and renders the stacked `razor.deps.json` snippets
+- 🧪 **Razor matrix** — attempts net11/10/9/8 (self-contained win-x64) and renders successful `razor.deps.json` snippets, with a detailed report for every target
 
 Formats that build projects are opt-in and dry-run by default.
 
@@ -61,9 +62,62 @@ mkdir "$env:USERPROFILE\.copilot\skills\vs-config-info"
 # Copy SKILL.md into that folder
 ```
 
-## 🧪 Try it
+## 🧪 Usage
 
-Start Copilot CLI and try any of these prompts:
+### Interactive launcher
+
+Start Copilot CLI and invoke the skill without an argument to choose an output format:
+
+```text
+/vs-config-info
+```
+
+### Choose a format directly
+
+Add one of these arguments to skip the launcher and use the corresponding existing workflow:
+
+| Command | Output |
+| --- | --- |
+| `/vs-config-info summary` | Text summary |
+| `/vs-config-info doctor` | Doctor mode |
+| `/vs-config-info screenshot` | Screenshot |
+| `/vs-config-info both` | Screenshot + text summary |
+| `/vs-config-info raw` | Raw output only |
+| `/vs-config-info folders` | Folder icons |
+| `/vs-config-info all` | All-in-one: separate info, folder and confirmed Razor matrix PNGs |
+| `/vs-config-info razor` | Razor matrix: dry-run plan, then confirmation before builds |
+
+Arguments are case-insensitive. Unknown formats or extra tokens, such as
+`/vs-config-info unknown` or `/vs-config-info summary extra`, show the supported choices without
+running scripts. If interactive input is unavailable and no format was supplied, the skill
+explains how to invoke a format directly, such as `/vs-config-info summary`, and stops; it
+never silently chooses text summary.
+
+### Razor build confirmation
+
+Both `all` and `razor` still show a dry-run plan and require explicit build confirmation
+before any Razor matrix build. Selecting a format is not confirmation. If confirmation is
+declined or unavailable, `razor` stops after the plan; `all` produces the other four PNGs and
+reports that the Razor matrix was omitted. Direct format selection does not bypass tool
+permissions or command approvals.
+
+After confirmation, the matrix tries `dotnet new razor -f <TFM> --force` and then
+`dotnet publish -r win-x64 --self-contained` in isolated per-framework folders. It uses the
+available SDK and templates rather than requiring an installed SDK with the same major version
+as each target. **An SDK is still required** for these commands; a runtime alone is not enough.
+Self-contained publishing supplies the target runtime, so an installed target runtime is not
+used as a prerequisite either.
+
+If a target is unsupported or a command fails, the matrix records the error and continues with
+the remaining frameworks. `razor-matrix.report.json`, saved beside the PNG, includes each
+framework's status, failing stage, exact command, working directory, exit code, full stdout and
+stderr, and any runtime packs found. The PNG contains successful targets only; partial failure
+is explicitly reported. If every target fails, no new PNG is produced and the script reports
+an error pointing to the JSON report. `-Cleanup` removes scratch projects, not the report.
+
+### Natural-language prompts
+
+You can also ask for the skill in plain language:
 
 ```text
 vs config
@@ -74,7 +128,7 @@ run dotnet --info as a screenshot
 doctor mode
 ```
 
-The skill launcher will pop up with clickable options.
+Requests that name a format use it directly; otherwise, the launcher appears.
 
 ## 📁 Output location
 
@@ -110,7 +164,7 @@ vs-config-info/
 │   ├── New-JsonSnippetImage.ps1    # VS Code dark-theme JSON
 │   └── New-RazorMatrix.ps1         # guarded multi-TFM razor build
 └── tests/
-    └── Invoke-SkillTests.ps1       # 40 tests, no external dependencies
+    └── Invoke-SkillTests.ps1       # 52 tests, no external dependencies
 ```
 
 All rendering lives in `scripts/` so it can be parsed, executed and verified — see
@@ -145,7 +199,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\New-RazorMatrix.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Invoke-SkillTests.ps1
 ```
 
-40 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
+52 tests, no Pester or other dependency to install, all output confined to `%TEMP%`. Every
 fixed defect has a named regression test. See [`docs/testing.md`](docs/testing.md) for what the
 suite covers, and [`docs/test-result.md`](docs/test-result.md) for the latest full run verbatim.
 

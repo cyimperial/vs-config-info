@@ -154,10 +154,12 @@ Two rendering details worth knowing:
 ## `New-RazorMatrix.ps1`
 
 Builds a Razor Pages app per framework and renders the stacked `razor.deps.json` targets.
+The PNG is a compact overview of target and dependency names; nested asset metadata is
+omitted to keep self-contained runtime inventories within image encoder size limits.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `-Framework` | `net10.0, net9.0, net8.0` | Frameworks, rendered top-to-bottom |
+| `-Framework` | `net11.0, net10.0, net9.0, net8.0` | Frameworks, attempted and rendered top-to-bottom |
 | `-WorkRoot` | `%LOCALAPPDATA%\vs-config-info\razor-matrix` | Scratch build folder |
 | `-OutputPath` | `razor-matrix.png` in a timestamped folder | PNG path |
 | `-OutputRoot` | session `files/` | Base folder for the timestamped output folder |
@@ -167,18 +169,44 @@ Builds a Razor Pages app per framework and renders the stacked `razor.deps.json`
 
 Safety behaviour:
 
-- **Dry run by default.** Nothing is created without `-Force`. A dry run always returns a plan
-  (`DryRun`, `Plan`, `WorkRoot`, `Path = $null`) and never throws, even on a machine with no
-  SDK at all — reporting "nothing to build" is a valid answer.
+- **Dry run by default.** Nothing is created without `-Force`. A valid dry-run request returns
+  `DryRun`, `Plan`, `WorkRoot`, `Path = $null`, `InstalledSdks` and `SdkProbe`. Missing `dotnet`
+  or SDKs are explained in the plan; `-Force` then fails before creating scratch projects.
 - **Per-framework isolation.** Each TFM builds in its own subfolder, so `dotnet new --force`
   cannot clobber another framework's project or a user's files.
 - **Work-root guard.** Refuses to run against an existing non-empty folder unless it finds the
   `.vs-config-info` marker it writes itself.
-- **SDK awareness.** Frameworks without a matching installed SDK are skipped, not failed. With
-  `-Force` and *no* buildable framework it throws before creating anything. On a machine with
-  only the .NET 10 SDK the dry run reports:
+- **No same-major SDK gate.** Any installed SDK enables attempts for every requested target.
+  `Plan.Supported` means eligible to attempt, not proven template/SDK compatibility.
+  With only a .NET 10 SDK, the dry run still plans:
   ```
-    net10.0   build
-    net9.0    SKIP - no matching SDK installed
-    net8.0    SKIP - no matching SDK installed
+    net11.0   attempt new + self-contained publish (win-x64)
+    net10.0   attempt new + self-contained publish (win-x64)
+    net9.0    attempt new + self-contained publish (win-x64)
+    net8.0    attempt new + self-contained publish (win-x64)
   ```
+- **Actual command results determine support.** Per isolated target folder, run
+  `dotnet new razor -f <TFM> -n razor --force --output .`, then
+  `dotnet publish -r win-x64 --self-contained -o <unique-publish-folder>`.
+  Normal SDK/template resolution applies, including any applicable `global.json`. No SDK,
+  runtime or template is installed by this script. Restore can download targeting/runtime
+  packs needed by the self-contained publish. A runtime-only installation cannot build.
+- **Compact PNG.** The image preserves target/dependency names and runtime pack versions,
+  not the complete deps JSON. Nested asset metadata is omitted to avoid image encoder size
+  limits; empty target objects are supported. Report the image with the detailed JSON report.
+- **Continue after failure.** A failed creation skips publishing that target, not the rest of
+  the matrix. Publish errors, missing deps files, malformed JSON and missing `targets` sections
+  are also recorded per framework. Only successful targets enter the PNG.
+- **Persistent detailed report.** `<image-stem>.report.json` is saved beside the PNG, outside
+  `WorkRoot`, and survives `-Cleanup`. It includes `Succeeded` (all targets succeeded), `Path`,
+  `ReportPath`, `WorkRoot`, `InstalledSdks`, `SdkProbe`, `Results` (all requested targets) and
+  `Frameworks` (successful targets with runtime packs). Each result has `Framework`, `Status`,
+  `Stage`, `Directory`, `Commands`, `Error`, `DepsPath` and `RuntimePacks`; each command records
+  `Command`, `Directory`, `ExitCode`, `StdOut` and `StdErr` without truncation.
+  `DepsPath` describes the build location and no longer exists after cleanup.
+- **Explicit incomplete results.** Partial failure warns and returns `Succeeded = false`
+  alongside the successful image and full report. Total failure saves the report and throws;
+  no new PNG is produced. Callers must inspect `Succeeded`/`Results`, not just PNG existence.
+  For each failed TFM, report its stage, command, exit code and actual output, explain only
+  causes supported by that output, and suggest an appropriate next step (for example, use an
+  SDK/template that supports the target or resolve the reported package restore error).

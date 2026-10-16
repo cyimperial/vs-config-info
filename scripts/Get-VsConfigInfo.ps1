@@ -73,17 +73,16 @@ $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer
 if (Test-Path -LiteralPath $vswhere) {
     $raw = & $vswhere -all -prerelease -format json 2>$null | Out-String
     if ($raw.Trim()) {
-        $vsInstalls = @($raw | ConvertFrom-Json | ForEach-Object {
-            # Any of these can be absent (Build Tools, damaged or partial installs), and a
-            # direct $_.catalog.productDisplayVersion throws PropertyNotFoundStrict.
+        $instances = $raw | ConvertFrom-Json
+        $vsInstalls = @(foreach ($instance in $instances) {
             [pscustomobject]@{
-                DisplayName      = Get-JsonProperty $_ 'displayName'
-                ProductVersion   = Get-JsonProperty $_ 'catalog.productDisplayVersion'
-                BuildVersion     = Get-JsonProperty $_ 'installationVersion'
-                IsPrerelease     = [bool](Get-JsonProperty $_ 'isPrerelease' $false)
-                InstallationPath = Get-JsonProperty $_ 'installationPath'
-                ProductId        = Get-JsonProperty $_ 'productId'
-                ChannelId        = Get-JsonProperty $_ 'channelId'
+                DisplayName      = Get-JsonProperty $instance 'displayName'
+                ProductVersion   = Get-JsonProperty $instance 'catalog.productDisplayVersion'
+                BuildVersion     = Get-JsonProperty $instance 'installationVersion'
+                IsPrerelease     = [bool](Get-JsonProperty $instance 'isPrerelease' $false)
+                InstallationPath = Get-JsonProperty $instance 'installationPath'
+                ProductId        = Get-JsonProperty $instance 'productId'
+                ChannelId        = Get-JsonProperty $instance 'channelId'
             }
         })
     }

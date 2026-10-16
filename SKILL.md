@@ -5,9 +5,8 @@ description: Reports the user's local .NET / Visual Studio configuration by runn
 
 # vs-config-info
 
-Reports the user's local .NET / Visual Studio configuration. All rendering is done by tested
-scripts in `scripts/` — **never re-implement drawing code inline**. Unverified inline snippets
-were the original source of clipped labels and syntax errors.
+Reports .NET / Visual Studio configuration using tested `scripts/`.
+**Never re-implement drawing code inline**.
 
 ## Running the scripts
 
@@ -15,8 +14,8 @@ were the original source of clipped labels and syntax errors.
 powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\<Script>.ps1" @args
 ```
 
-`<skill>` is this skill's own folder, resolved from the path you were loaded from — never
-hardcode a user profile path. The bypass is required: execution policy is commonly `Restricted`.
+`<skill>` is the loaded skill folder, never a hardcoded user path. Restricted execution policy
+requires the process-scoped bypass above.
 
 | Script | Purpose |
 | --- | --- |
@@ -26,23 +25,44 @@ hardcode a user profile path. The bypass is required: execution policy is common
 | `New-JsonSnippetImage.ps1` | JSON snippets stacked as a VS Code dark-theme PNG |
 | `New-RazorMatrix.ps1` | Builds razor on several TFMs, renders the stacked `razor.deps.json` |
 
-Parameters: [`docs/scripts.md`](docs/scripts.md). Rely on each script's built-in safety
-behaviour rather than scripting the equivalent work yourself.
+See [parameters](docs/scripts.md). Use the scripts' built-in safety behaviour.
 
 ## Workflow
 
-### 1. Launcher
+### 1. Select a format before running scripts
 
-Unless the user's message already names a format, ask with `ask_user` — it accepts only
-`question` and `choices`, and supplies its own freeform box:
+For `/vs-config-info <format>`, trim whitespace and match one token case-insensitively:
 
-- **question:**
+| Argument | Format | Scripts |
+| --- | --- | --- |
+| `summary` | Text summary | `Get-VsConfigInfo.ps1` |
+| `doctor` | Doctor mode | `Get-VsConfigInfo.ps1` |
+| `screenshot` | Screenshot | `New-CmdScreenshot.ps1` |
+| `both` | Both | `New-CmdScreenshot.ps1` + `Get-VsConfigInfo.ps1` |
+| `raw` | Raw output only | `Get-VsConfigInfo.ps1` |
+| `folders` | Folder icons | `Get-VsConfigInfo.ps1` + `New-FolderIconImage.ps1` |
+| `all` | All-in-one | Collector + screenshot + folders + `New-RazorMatrix.ps1` |
+| `razor` | Razor matrix | `New-RazorMatrix.ps1` |
+
+A recognized format skips the launcher.
+Do not forward arguments as script parameters or commands.
+An unknown format (including extra tokens) must list the supported choices above and stop without
+running any scripts or showing the launcher.
+
+With no format, show the existing launcher. Preserve natural-language format requests
+without showing the launcher. If interactive input is unavailable or selection fails, say:
+"Choose a format directly: /vs-config-info <format>." List the supported arguments.
+Stop without running scripts; never silently choose text summary.
+
+Use `ask_user`: `message` + `requestedSchema` (string `format` with `enum` choices).
+
+- **message:**
   ```
   🛠️  vs-config-info launcher
 
   I'll peek at your local .NET setup. How should I serve it?
   ```
-- **choices**, in this order:
+- **format choices**, in this order:
   1. `📋  Text summary (Recommended) — SDK, Host, runtimes, workloads`
   2. `🩺  Doctor mode — summary + flag anything missing/out-of-date`
   3. `📸  Screenshot — render dotnet --info as a PNG`
@@ -50,7 +70,7 @@ Unless the user's message already names a format, ask with `ask_user` — it acc
   5. `🔬  Raw output only — full dotnet --info in a code block`
   6. `📁  Folder icons — screenshots of dotnet install folders (sdk / NETCore / templates)`
   7. `🎒  All-in-one — dotnet --info + folder icons as SEPARATE PNGs in one timestamped folder`
-  8. `🧪  Razor matrix — builds razor on net10/9/8 (slow, ~100-200 MB per framework)`
+  8. `🧪  Razor matrix — tries net11/10/9/8 (slow, ~100-200 MB per framework)`
   9. `❌  Cancel`
 
 On `Cancel`, acknowledge and stop.
@@ -135,27 +155,35 @@ is false, report the mismatch rather than presenting the image as accurate. A mi
 produces a "Path not found" image instead of an error. Save into a timestamped `MMDD-HHMM`
 folder under the session `files/` directory, then report the folder and the three filenames.
 
-**All-in-one** — five *separate* PNGs in one `MMDD-HHMM` folder; do **not** merge them:
-`dotnet-info.png` (pass `-FileName`), `sdk.png`, `netcore-app.png`, `templates.png` and
-`razor-matrix.png`. The last one runs real builds, so confirm first (below); if the user
-declines, produce the other four and say the bundle omitted the razor matrix. Afterwards report
-the folder, every filename, and a short per-framework runtimepack summary.
+**All-in-one** — five *separate* PNGs in one `MMDD-HHMM` folder; never merge:
+`dotnet-info.png` (`-FileName`), `sdk.png`, `netcore-app.png`, `templates.png`, `razor-matrix.png`.
+Require the Razor dry-run and explicit confirmation below for `/vs-config-info all`.
+If declined or unavailable, produce the other four; report that the bundle omitted the razor matrix.
+Report folder and filenames.
 
-**Razor matrix** — ⚠️ the only format that writes outside the session folder and costs real time
-and disk (~100-200 MB per framework). Always, in this order:
+**Razor matrix** — ⚠️ Builds outside the session folder (~100-200 MB per framework). Always:
 
-1. Dry run and show the plan — it reports which frameworks can actually build:
+1. Dry run and show the plan — attempts, not guaranteed target support:
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-RazorMatrix.ps1"
    ```
-2. Confirm with the user via `ask_user`.
-3. Only then re-run with `-Force`:
+2. Obtain explicit build confirmation via `ask_user`.
+   `/vs-config-info razor` and `/vs-config-info all` select formats, not build consent.
+   If confirmation is declined or unavailable, do not build or pass `-Force`; stop `razor`
+   after the plan: interactive confirmation is required.
+3. Only after affirmative confirmation re-run with `-Force`:
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File "<skill>\scripts\New-RazorMatrix.ps1" -Force -Cleanup
    ```
 
-Frameworks whose SDK is missing are skipped, not failed. Report the folder, the filename, and a
-per-framework TFM + runtimepack summary.
+Use available SDK/templates, not same-major SDKs or installed runtimes; a runtime alone cannot build.
+Continue after failures; report all TFM statuses/errors.
+[Report details](docs/scripts.md#new-razormatrixps1).
+
+The PNG is a compact overview of target and dependency names, not a verbatim
+copy of razor.deps.json. Nested asset metadata is intentionally omitted to
+avoid image encoder size limits. Report the PNG together with the detailed
+JSON report and per-framework runtime pack versions.
 
 ## Output style
 

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Used by the "Razor matrix" format to stack razor.deps.json targets sections
-    (net10.0 on top, then net9.0, then net8.0) into a single image.
+    (successful targets from net11.0 down to net8.0) into a single image.
 
     Theme:
       * background        #1E1E1E
